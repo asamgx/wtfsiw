@@ -1,0 +1,31 @@
+# wtfsiw configuration
+# Copy this file to ~/.config/wtfsiw/config.yaml
+
+ai:
+  # AI provider: "claude" or "openai"
+  provider: claude
+
+  # API keys (can also use environment variables: ANTHROPIC_API_KEY, OPENAI_API_KEY)
+  claude_api_key: ""
+  openai_api_key: ""
+
+tmdb:
+  # TMDb API key (free at https://developer.themoviedb.org/)
+  # Can also use environment variable: TMDB_API_KEY
+  api_key: ""
+
+preferences:
+  # Default media type: "all", "movie", or "tv"
+  default_type: all
+
+  # Region for streaming providers (ISO 3166-1 alpha-2)
+  region: US
+
+  # Language (ISO 639-1)
+  language: en
+
+  # Minimum rating filter (0-10, 0 = no filter)
+  min_rating: 0
+
+  # Maximum results to display
+  max_results: 10
