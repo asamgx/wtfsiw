@@ -1,12 +1,11 @@
 package tmdb
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
-
-	"wtfsiw/internal/ai"
 )
 
 // Search performs a multi-search for movies and TV shows
@@ -38,7 +37,7 @@ func (c *Client) Search(query string) (*SearchResponse, error) {
 }
 
 // Discover finds movies/TV shows based on structured parameters
-func (c *Client) Discover(searchParams *ai.SearchParams) (*SearchResponse, error) {
+func (c *Client) Discover(searchParams *SearchParams) (*SearchResponse, error) {
 	var allResults []Media
 
 	// Determine which endpoints to query
@@ -108,10 +107,25 @@ func (c *Client) Discover(searchParams *ai.SearchParams) (*SearchResponse, error
 	}, nil
 }
 
-func (c *Client) buildDiscoverParams(sp *ai.SearchParams, endpoint string) url.Values {
+func (c *Client) buildDiscoverParams(sp *SearchParams, endpoint string) url.Values {
 	params := url.Values{}
-	params.Set("sort_by", "vote_average.desc")
-	params.Set("vote_count.gte", "100") // Ensure some minimum votes for quality
+	isMovie := strings.Contains(endpoint, "/movie")
+
+	// Sorting
+	sortBy := "vote_average.desc" // default
+	if sp.SortBy != "" {
+		if mapped, ok := SortByMap[strings.ToLower(sp.SortBy)]; ok {
+			sortBy = mapped
+		}
+	}
+	params.Set("sort_by", sortBy)
+
+	// Vote count filtering (quality control)
+	minVotes := 100 // default minimum
+	if sp.MinVoteCount > 0 {
+		minVotes = sp.MinVoteCount
+	}
+	params.Set("vote_count.gte", strconv.Itoa(minVotes))
 
 	// Genre filtering
 	if len(sp.Genres) > 0 {
@@ -128,14 +142,14 @@ func (c *Client) buildDiscoverParams(sp *ai.SearchParams, endpoint string) url.V
 
 	// Year filtering
 	if sp.YearFrom > 0 {
-		if strings.Contains(endpoint, "/movie") {
+		if isMovie {
 			params.Set("primary_release_date.gte", fmt.Sprintf("%d-01-01", sp.YearFrom))
 		} else {
 			params.Set("first_air_date.gte", fmt.Sprintf("%d-01-01", sp.YearFrom))
 		}
 	}
 	if sp.YearTo > 0 {
-		if strings.Contains(endpoint, "/movie") {
+		if isMovie {
 			params.Set("primary_release_date.lte", fmt.Sprintf("%d-12-31", sp.YearTo))
 		} else {
 			params.Set("first_air_date.lte", fmt.Sprintf("%d-12-31", sp.YearTo))
@@ -147,8 +161,8 @@ func (c *Client) buildDiscoverParams(sp *ai.SearchParams, endpoint string) url.V
 		params.Set("vote_average.gte", fmt.Sprintf("%.1f", sp.MinRating))
 	}
 
-	// Runtime filtering (movies only)
-	if sp.MaxRuntime > 0 && strings.Contains(endpoint, "/movie") {
+	// Runtime filtering
+	if sp.MaxRuntime > 0 {
 		params.Set("with_runtime.lte", strconv.Itoa(sp.MaxRuntime))
 	}
 
@@ -157,12 +171,107 @@ func (c *Client) buildDiscoverParams(sp *ai.SearchParams, endpoint string) url.V
 		params.Set("with_original_language", sp.OriginalLang)
 	}
 
+	// Studio/Company filtering
+	if len(sp.Studios) > 0 {
+		companyIDs := []string{}
+		for _, studio := range sp.Studios {
+			if id, ok := StudioMap[strings.ToLower(studio)]; ok {
+				companyIDs = append(companyIDs, strconv.Itoa(id))
+			}
+		}
+		if len(companyIDs) > 0 {
+			params.Set("with_companies", strings.Join(companyIDs, "|")) // OR logic
+		}
+	}
+
+	// Actor/People filtering
+	if len(sp.Actors) > 0 || len(sp.Directors) > 0 {
+		peopleIDs := []string{}
+		allPeople := append(sp.Actors, sp.Directors...)
+		for _, person := range allPeople {
+			if id := c.searchPersonID(person); id > 0 {
+				peopleIDs = append(peopleIDs, strconv.Itoa(id))
+			}
+		}
+		if len(peopleIDs) > 0 {
+			if isMovie {
+				// For movies, use with_people (cast or crew)
+				params.Set("with_people", strings.Join(peopleIDs, ",")) // AND logic
+			}
+			// Note: TV discover doesn't support with_people directly
+		}
+	}
+
+	// Watch provider filtering
+	if len(sp.WatchProviders) > 0 {
+		providerIDs := []string{}
+		for _, provider := range sp.WatchProviders {
+			if id, ok := WatchProviderMap[strings.ToLower(provider)]; ok {
+				providerIDs = append(providerIDs, strconv.Itoa(id))
+			}
+		}
+		if len(providerIDs) > 0 {
+			params.Set("with_watch_providers", strings.Join(providerIDs, "|")) // OR logic
+		}
+	}
+
+	// Monetization type
+	if sp.MonetizationType != "" {
+		if mapped, ok := MonetizationTypeMap[strings.ToLower(sp.MonetizationType)]; ok {
+			params.Set("with_watch_monetization_types", mapped)
+		}
+	}
+
+	// Certification filtering
+	if sp.Certification != "" {
+		cert := strings.ToUpper(sp.Certification)
+		if mapped, ok := CertificationMap[strings.ToLower(sp.Certification)]; ok {
+			cert = mapped
+		}
+		params.Set("certification_country", "US")
+		params.Set("certification", cert)
+	}
+
+	// TV Status filtering
+	if sp.TVStatus != "" && !isMovie {
+		if status, ok := TVStatusMap[strings.ToLower(sp.TVStatus)]; ok {
+			params.Set("with_status", strconv.Itoa(status))
+		}
+	}
+
 	// Region for watch providers
-	if c.region != "" {
-		params.Set("watch_region", c.region)
+	region := c.region
+	if sp.AvailableInRegion != "" {
+		region = sp.AvailableInRegion
+	}
+	if region != "" {
+		params.Set("watch_region", region)
 	}
 
 	return params
+}
+
+// searchPersonID searches for a person by name and returns their TMDb ID
+func (c *Client) searchPersonID(name string) int {
+	params := url.Values{}
+	params.Set("query", name)
+
+	data, err := c.get("/search/person", params)
+	if err != nil {
+		return 0
+	}
+
+	var resp struct {
+		Results []struct {
+			ID int `json:"id"`
+		} `json:"results"`
+	}
+
+	if err := json.Unmarshal(data, &resp); err != nil || len(resp.Results) == 0 {
+		return 0
+	}
+
+	return resp.Results[0].ID
 }
 
 func (c *Client) findSimilar(titles []string, mediaType string) []Media {

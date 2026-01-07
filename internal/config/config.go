@@ -11,6 +11,7 @@ import (
 type Config struct {
 	AI          AIConfig          `mapstructure:"ai"`
 	TMDB        TMDBConfig        `mapstructure:"tmdb"`
+	Trakt       TraktConfig       `mapstructure:"trakt"`
 	Preferences PreferencesConfig `mapstructure:"preferences"`
 }
 
@@ -22,6 +23,12 @@ type AIConfig struct {
 
 type TMDBConfig struct {
 	APIKey string `mapstructure:"api_key"`
+}
+
+type TraktConfig struct {
+	ClientID     string `mapstructure:"client_id"`
+	ClientSecret string `mapstructure:"client_secret"`
+	AccessToken  string `mapstructure:"access_token"`
 }
 
 type PreferencesConfig struct {
@@ -62,6 +69,9 @@ func Init() error {
 	viper.BindEnv("ai.claude_api_key", "ANTHROPIC_API_KEY")
 	viper.BindEnv("ai.openai_api_key", "OPENAI_API_KEY")
 	viper.BindEnv("tmdb.api_key", "TMDB_API_KEY")
+	viper.BindEnv("trakt.client_id", "TRAKT_CLIENT_ID")
+	viper.BindEnv("trakt.client_secret", "TRAKT_CLIENT_SECRET")
+	viper.BindEnv("trakt.access_token", "TRAKT_ACCESS_TOKEN")
 
 	// Read config file if exists
 	if err := viper.ReadInConfig(); err != nil {
@@ -97,4 +107,10 @@ func Save() error {
 func Set(key, value string) error {
 	viper.Set(key, value)
 	return Save()
+}
+
+// GetSessionsDir returns the path to the sessions directory
+func GetSessionsDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "wtfsiw", "sessions")
 }

@@ -4,14 +4,53 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// Catppuccin Mocha color palette
 var (
-	// Colors
-	primaryColor   = lipgloss.Color("#FF6B6B")
-	secondaryColor = lipgloss.Color("#4ECDC4")
-	accentColor    = lipgloss.Color("#FFE66D")
-	mutedColor     = lipgloss.Color("#666666")
-	bgColor        = lipgloss.Color("#1a1a2e")
-	cardBgColor    = lipgloss.Color("#16213e")
+	// Accent colors
+	rosewater = lipgloss.Color("#f5e0dc")
+	flamingo  = lipgloss.Color("#f2cdcd")
+	pink      = lipgloss.Color("#f5c2e7")
+	mauve     = lipgloss.Color("#cba6f7")
+	red       = lipgloss.Color("#f38ba8")
+	maroon    = lipgloss.Color("#eba0ac")
+	peach     = lipgloss.Color("#fab387")
+	yellow    = lipgloss.Color("#f9e2af")
+	green     = lipgloss.Color("#a6e3a1")
+	teal      = lipgloss.Color("#94e2d5")
+	sky       = lipgloss.Color("#89dceb")
+	sapphire  = lipgloss.Color("#74c7ec")
+	blue      = lipgloss.Color("#89b4fa")
+	lavender  = lipgloss.Color("#b4befe")
+
+	// Text colors
+	text     = lipgloss.Color("#cdd6f4")
+	subtext1 = lipgloss.Color("#bac2de")
+	subtext0 = lipgloss.Color("#a6adc8")
+
+	// Overlay colors
+	overlay2 = lipgloss.Color("#9399b2")
+	overlay1 = lipgloss.Color("#7f849c")
+	overlay0 = lipgloss.Color("#6c7086")
+
+	// Surface colors
+	surface2 = lipgloss.Color("#585b70")
+	surface1 = lipgloss.Color("#45475a")
+	surface0 = lipgloss.Color("#313244")
+
+	// Base colors
+	base   = lipgloss.Color("#1e1e2e")
+	mantle = lipgloss.Color("#181825")
+	crust  = lipgloss.Color("#11111b")
+)
+
+// Semantic color aliases
+var (
+	primaryColor   = mauve
+	secondaryColor = teal
+	accentColor    = yellow
+	mutedColor     = overlay1
+	bgColor        = base
+	cardBgColor    = surface0
 
 	// App container
 	appStyle = lipgloss.NewStyle().
@@ -19,24 +58,24 @@ var (
 
 	// Title/header
 	titleStyle = lipgloss.NewStyle().
-			Foreground(primaryColor).
+			Foreground(mauve).
 			Bold(true).
 			MarginBottom(1)
 
 	// Subtitle
 	subtitleStyle = lipgloss.NewStyle().
-			Foreground(mutedColor).
+			Foreground(subtext0).
 			Italic(true)
 
 	// Input
 	inputStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(secondaryColor).
+			BorderForeground(surface2).
 			Padding(0, 1).
 			MarginBottom(1)
 
 	inputPromptStyle = lipgloss.NewStyle().
-				Foreground(secondaryColor).
+				Foreground(teal).
 				Bold(true)
 
 	// Results list
@@ -45,60 +84,60 @@ var (
 
 	selectedItemStyle = lipgloss.NewStyle().
 				Border(lipgloss.RoundedBorder(), false, false, false, true).
-				BorderForeground(primaryColor).
+				BorderForeground(mauve).
 				PaddingLeft(1).
-				Foreground(primaryColor)
+				Foreground(lavender)
 
 	// Media card
 	cardStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(secondaryColor).
+			BorderForeground(surface2).
 			Padding(1, 2).
 			MarginBottom(1)
 
 	mediaTitleStyle = lipgloss.NewStyle().
-			Foreground(accentColor).
+			Foreground(yellow).
 			Bold(true)
 
 	mediaYearStyle = lipgloss.NewStyle().
-			Foreground(mutedColor)
+			Foreground(subtext0)
 
 	mediaTypeStyle = lipgloss.NewStyle().
-			Foreground(secondaryColor).
-			Background(lipgloss.Color("#0d1b2a")).
+			Foreground(base).
+			Background(mauve).
 			Padding(0, 1)
 
 	ratingStyle = lipgloss.NewStyle().
-			Foreground(accentColor).
+			Foreground(yellow).
 			Bold(true)
 
 	overviewStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#cccccc")).
+			Foreground(text).
 			MarginTop(1)
 
 	// Providers
 	providerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ffffff")).
-			Background(primaryColor).
+			Foreground(base).
+			Background(teal).
 			Padding(0, 1).
 			MarginRight(1)
 
 	// Status/loading
 	spinnerStyle = lipgloss.NewStyle().
-			Foreground(secondaryColor)
+			Foreground(mauve)
 
 	statusStyle = lipgloss.NewStyle().
-			Foreground(mutedColor).
+			Foreground(subtext0).
 			Italic(true)
 
 	// Error
 	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#ff4444")).
+			Foreground(red).
 			Bold(true)
 
 	// Help
 	helpStyle = lipgloss.NewStyle().
-			Foreground(mutedColor).
+			Foreground(overlay1).
 			MarginTop(1)
 )
 

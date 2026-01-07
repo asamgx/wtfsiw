@@ -9,10 +9,10 @@ Describe what you're in the mood for, and get personalized movie and TV show rec
 - **Natural language search** - "something dark and psychological like Breaking Bad"
 - **Dual AI backend** - Supports both Claude (Anthropic) and OpenAI
 - **Rich TUI** - Interactive terminal interface with Bubble Tea
+- **Pretty CLI** - Animated spinners, colors, styled output (or plain mode for scripting)
 - **Streaming providers** - Shows where to watch (Netflix, HBO, etc.)
 - **Star ratings** - Visual ratings with ★★★★☆ display
 - **AI-only mode** - Works without TMDb for quick recommendations
-- **CLI mode** - Non-interactive output for scripting
 
 ## Installation
 
@@ -57,15 +57,17 @@ Launches a beautiful terminal UI where you can type queries and browse results.
 ### CLI Mode
 
 ```bash
-# Get recommendations directly
+# Get recommendations with animated output
 ./wtfsiw "feel-good comedy from the 90s"
 
 # Limit number of results
 ./wtfsiw "Korean thriller" -n 5
 
-# Sci-fi with specific count
-./wtfsiw "mind-bending sci-fi like Inception" --number 3
+# Plain output for scripting (no colors/animations)
+./wtfsiw "mind-bending sci-fi like Inception" -n 3 --plain
 ```
+
+CLI mode features animated spinners, colored output, and styled results. Use `--plain` or `-p` to disable all formatting for piping to other commands.
 
 ### Example Output
 
@@ -129,10 +131,90 @@ You can also use environment variables:
 |----------|----------|-----------|
 | OpenAI or Claude | Yes (one) | [platform.openai.com](https://platform.openai.com) or [console.anthropic.com](https://console.anthropic.com) |
 | TMDb | Optional | [developer.themoviedb.org](https://developer.themoviedb.org) (free) |
+| Trakt | Optional | [trakt.tv/oauth/applications](https://trakt.tv/oauth/applications) (free) |
 
 **Without TMDb**: Works in AI-only mode with estimated ratings and provider guesses.
 
 **With TMDb**: Real ratings, vote counts, and accurate streaming provider data.
+
+**With Trakt**: Access your watchlist, watch history, and ratings for personalized recommendations.
+
+## Trakt Integration
+
+Trakt integration allows wtfsiw to access your personal watch data for better recommendations.
+
+### Step 1: Create a Trakt API Application
+
+1. Go to [trakt.tv/oauth/applications](https://trakt.tv/oauth/applications)
+2. Click **"New Application"**
+3. Fill in the form:
+   - **Name**: `wtfsiw` (or any name you prefer)
+   - **Description**: `CLI tool for movie/TV recommendations`
+   - **Redirect URI**: `urn:ietf:wg:oauth:2.0:oob` (required for CLI apps)
+   - **Permissions**: Leave unchecked (read-only access is sufficient)
+4. Click **"Save App"**
+5. You'll receive a **Client ID** and **Client Secret**
+
+### Step 2: Configure wtfsiw
+
+```bash
+# Set your Trakt credentials
+./wtfsiw config set trakt.client_id YOUR_CLIENT_ID
+./wtfsiw config set trakt.client_secret YOUR_CLIENT_SECRET
+```
+
+Or use environment variables:
+```bash
+export TRAKT_CLIENT_ID=your_client_id
+export TRAKT_CLIENT_SECRET=your_client_secret
+```
+
+### Step 3: Authenticate
+
+```bash
+./wtfsiw trakt auth
+```
+
+This starts the Device OAuth flow:
+1. You'll see a URL and a code (e.g., `Go to: https://trakt.tv/activate` and `Enter code: A1B2C3D4`)
+2. Open the URL in your browser
+3. Enter the code when prompted
+4. Authorize the application
+5. Return to the terminal - authentication completes automatically
+
+Your access token is saved to the config file. You only need to do this once.
+
+### Step 4: Use Trakt Features
+
+```bash
+# Check Trakt connection status
+./wtfsiw trakt
+
+# View your watchlist
+./wtfsiw trakt watchlist
+
+# View only movies or shows
+./wtfsiw trakt watchlist movies
+./wtfsiw trakt watchlist shows
+```
+
+### Trakt Commands
+
+| Command | Description |
+|---------|-------------|
+| `wtfsiw trakt` | Show Trakt connection status |
+| `wtfsiw trakt auth` | Authenticate with Trakt |
+| `wtfsiw trakt watchlist` | View all watchlist items |
+| `wtfsiw trakt watchlist movies` | View only movies |
+| `wtfsiw trakt watchlist shows` | View only TV shows |
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `TRAKT_CLIENT_ID` | Your Trakt application's Client ID |
+| `TRAKT_CLIENT_SECRET` | Your Trakt application's Client Secret |
+| `TRAKT_ACCESS_TOKEN` | OAuth access token (auto-saved after auth) |
 
 ## Tech Stack
 

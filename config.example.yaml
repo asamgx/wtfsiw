@@ -14,6 +14,14 @@ tmdb:
   # Can also use environment variable: TMDB_API_KEY
   api_key: ""
 
+trakt:
+  # Trakt API credentials (create app at https://trakt.tv/oauth/applications)
+  # Can also use environment variables: TRAKT_CLIENT_ID, TRAKT_CLIENT_SECRET, TRAKT_ACCESS_TOKEN
+  client_id: ""
+  client_secret: ""
+  # Access token is obtained by running: wtfsiw trakt auth
+  access_token: ""
+
 preferences:
   # Default media type: "all", "movie", or "tv"
   default_type: all

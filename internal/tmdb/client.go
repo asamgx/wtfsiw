@@ -125,6 +125,51 @@ type Genre struct {
 	Name string `json:"name"`
 }
 
+// SearchParams represents the structured search parameters for discovering content
+type SearchParams struct {
+	// Core search
+	Keywords  []string `json:"keywords"`
+	Genres    []string `json:"genres"`
+	SimilarTo []string `json:"similar_to"`
+	MediaType string   `json:"media_type"` // movie, tv, or all
+
+	// Date/Year filters
+	YearFrom int `json:"year_from,omitempty"`
+	YearTo   int `json:"year_to,omitempty"`
+
+	// Rating filters
+	MinRating    float64 `json:"min_rating,omitempty"`     // 0-10 scale
+	MinVoteCount int     `json:"min_vote_count,omitempty"` // minimum number of votes
+
+	// Runtime
+	MaxRuntime int `json:"max_runtime,omitempty"` // in minutes
+
+	// Language/Region
+	OriginalLang string `json:"original_language,omitempty"` // ISO 639-1 code: en, ko, ja, etc.
+
+	// People/Companies
+	Actors    []string `json:"actors,omitempty"`    // actor names mentioned
+	Directors []string `json:"directors,omitempty"` // director names mentioned
+	Studios   []string `json:"studios,omitempty"`   // production companies: Pixar, A24, Marvel, etc.
+
+	// Streaming
+	WatchProviders    []string `json:"watch_providers,omitempty"`     // Netflix, HBO Max, Disney+, etc.
+	MonetizationType  string   `json:"monetization_type,omitempty"`   // flatrate, free, rent, buy
+	AvailableInRegion string   `json:"available_in_region,omitempty"` // ISO 3166-1 code: US, GB, etc.
+
+	// Content rating
+	Certification string `json:"certification,omitempty"` // G, PG, PG-13, R, NC-17 (movies) or TV-Y, TV-G, TV-PG, TV-14, TV-MA (TV)
+
+	// TV-specific
+	TVStatus string `json:"tv_status,omitempty"` // returning, ended, canceled
+
+	// Sorting
+	SortBy string `json:"sort_by,omitempty"` // popularity, rating, release_date, revenue
+
+	// Non-TMDb (AI interpretation)
+	Mood string `json:"mood,omitempty"` // overall mood/tone (used for AI recommendations)
+}
+
 // GenreMap maps genre names to IDs
 var GenreMap = map[string]int{
 	// Movie genres

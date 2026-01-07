@@ -24,7 +24,7 @@ func (p *ClaudeProvider) ExtractSearchParams(ctx context.Context, query string) 
 		Model:     anthropic.ModelClaude3_5Haiku20241022,
 		MaxTokens: 1024,
 		System: []anthropic.TextBlockParam{
-			{Text: systemPromptExtract},
+			{Text: getSystemPromptExtract()},
 		},
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(query)),

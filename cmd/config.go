@@ -33,6 +33,8 @@ You can also set these via environment variables:
 		fmt.Printf("  Claude API Key: %s\n", maskKey(cfg.AI.ClaudeAPIKey))
 		fmt.Printf("  OpenAI API Key: %s\n", maskKey(cfg.AI.OpenAIAPIKey))
 		fmt.Printf("  TMDb API Key: %s\n", maskKey(cfg.TMDB.APIKey))
+		fmt.Printf("  Trakt Client ID: %s\n", maskKey(cfg.Trakt.ClientID))
+		fmt.Printf("  Trakt Access Token: %s\n", maskKey(cfg.Trakt.AccessToken))
 		fmt.Printf("  Region: %s\n", cfg.Preferences.Region)
 		fmt.Printf("  Language: %s\n", cfg.Preferences.Language)
 		fmt.Println()
@@ -46,11 +48,14 @@ var configSetCmd = &cobra.Command{
 	Long: `Set a configuration value.
 
 Available keys:
-  ai.provider        - AI provider to use (claude or openai)
-  ai.claude_api_key  - Anthropic Claude API key
-  ai.openai_api_key  - OpenAI API key
-  tmdb.api_key       - TMDb API key
-  preferences.region - Region for streaming providers (e.g., US, GB)
+  ai.provider          - AI provider to use (claude or openai)
+  ai.claude_api_key    - Anthropic Claude API key
+  ai.openai_api_key    - OpenAI API key
+  tmdb.api_key         - TMDb API key
+  trakt.client_id      - Trakt API client ID
+  trakt.client_secret  - Trakt API client secret
+  trakt.access_token   - Trakt access token (use 'wtfsiw trakt auth' instead)
+  preferences.region   - Region for streaming providers (e.g., US, GB)
   preferences.language - Language code (e.g., en, es)
   preferences.min_rating - Minimum rating filter (0-10)
   preferences.max_results - Maximum results to show
@@ -58,7 +63,7 @@ Available keys:
 Examples:
   wtfsiw config set tmdb.api_key abc123
   wtfsiw config set ai.provider openai
-  wtfsiw config set preferences.region GB`,
+  wtfsiw config set trakt.client_id YOUR_CLIENT_ID`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		key := args[0]

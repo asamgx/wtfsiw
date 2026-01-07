@@ -4,18 +4,20 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/spf13/cobra"
 
 	"wtfsiw/internal/ai"
+	"wtfsiw/internal/cli"
 	"wtfsiw/internal/config"
 	"wtfsiw/internal/tmdb"
+	"wtfsiw/internal/trakt"
 	"wtfsiw/internal/tui"
 )
 
 var (
 	numResults int
+	plainMode  bool
 )
 
 var rootCmd = &cobra.Command{
@@ -45,6 +47,7 @@ func Execute() {
 func init() {
 	cobra.OnInitialize(initConfig)
 	rootCmd.Flags().IntVarP(&numResults, "number", "n", 10, "number of recommendations (1-10)")
+	rootCmd.Flags().BoolVarP(&plainMode, "plain", "p", false, "disable animations and colors (for scripting)")
 }
 
 func initConfig() {
@@ -54,7 +57,7 @@ func initConfig() {
 }
 
 func runMain(cmd *cobra.Command, args []string) error {
-	// Initialize AI provider (required)
+	// Initialize AI provider (required for both modes)
 	aiProvider, err := ai.NewProvider()
 	if err != nil {
 		return fmt.Errorf("failed to initialize AI: %w\n\nRun 'wtfsiw config' for setup instructions", err)
@@ -67,16 +70,34 @@ func runMain(cmd *cobra.Command, args []string) error {
 		tmdbClient = nil
 	}
 
-	// If query provided as argument, run non-interactive mode
+	// If query provided as argument, run non-interactive CLI mode
 	if len(args) > 0 {
-		return runNonInteractive(aiProvider, tmdbClient, args[0])
+		return runNonInteractive(aiProvider, tmdbClient, args[0], plainMode)
 	}
 
-	// Otherwise launch TUI
-	return tui.Run(aiProvider, tmdbClient)
+	// Otherwise launch interactive chat TUI
+	return runChatMode(aiProvider, tmdbClient)
 }
 
-func runNonInteractive(aiProvider ai.Provider, tmdbClient *tmdb.Client, query string) error {
+func runChatMode(aiProvider ai.Provider, tmdbClient *tmdb.Client) error {
+	// Initialize chat provider
+	chatProvider, err := ai.NewChatProvider()
+	if err != nil {
+		return fmt.Errorf("failed to initialize chat provider: %w", err)
+	}
+
+	// Initialize Trakt client (optional - if not configured, some features unavailable)
+	traktClient, err := trakt.NewClient()
+	if err != nil {
+		// Trakt not configured
+		traktClient = nil
+	}
+
+	// Launch chat TUI
+	return tui.RunChat(chatProvider, tmdbClient, traktClient, aiProvider)
+}
+
+func runNonInteractive(aiProvider ai.Provider, tmdbClient *tmdb.Client, query string, plain bool) error {
 	ctx := context.Background()
 
 	// Validate and clamp numResults to 1-10
@@ -86,35 +107,73 @@ func runNonInteractive(aiProvider ai.Provider, tmdbClient *tmdb.Client, query st
 		numResults = 10
 	}
 
-	fmt.Printf("🎬 Searching for: %s\n\n", query)
+	// Print header
+	if plain {
+		fmt.Printf("Searching for: %s\n\n", query)
+	} else {
+		cli.PrintHeader(query)
+	}
 
 	var recommendations []ai.Recommendation
 	var summary string
 
+	// Helper to run with optional spinner
+	runWithSpinner := func(msg string, fn func() error) error {
+		if plain {
+			fmt.Println(msg + "...")
+			return fn()
+		}
+		spinner := cli.NewSpinner(msg + "...")
+		spinner.Start()
+		err := fn()
+		if err != nil {
+			spinner.Stop()
+			cli.PrintError(err)
+			return err
+		}
+		spinner.StopWithMessage(msg + " done")
+		return nil
+	}
+
 	if tmdbClient == nil {
 		// AI-only mode
-		fmt.Println("Using AI-only mode (TMDb not configured)...")
-		resp, err := aiProvider.GetRecommendations(ctx, query, numResults)
+		var resp *ai.RecommendationResponse
+		err := runWithSpinner("Asking AI for recommendations", func() error {
+			var err error
+			resp, err = aiProvider.GetRecommendations(ctx, query, numResults)
+			return err
+		})
 		if err != nil {
-			return fmt.Errorf("AI recommendation failed: %w", err)
+			return nil
 		}
 		recommendations = resp.Recommendations
 		summary = resp.Summary
 	} else {
 		// TMDb mode
-		fmt.Println("Analyzing with AI...")
-		params, err := aiProvider.ExtractSearchParams(ctx, query)
+		var params *ai.SearchParams
+		err := runWithSpinner("Analyzing with AI", func() error {
+			var err error
+			params, err = aiProvider.ExtractSearchParams(ctx, query)
+			return err
+		})
 		if err != nil {
-			return fmt.Errorf("AI analysis failed: %w", err)
+			return nil
 		}
 
-		fmt.Println("Searching TMDb...")
-		resp, err := tmdbClient.Discover(params)
+		var resp *tmdb.SearchResponse
+		err = runWithSpinner("Searching TMDb", func() error {
+			var err error
+			resp, err = tmdbClient.Discover(params)
+			return err
+		})
 		if err != nil {
-			return fmt.Errorf("search failed: %w", err)
+			return nil
 		}
 
-		tmdbClient.EnrichWithProviders(resp.Results)
+		_ = runWithSpinner("Fetching providers", func() error {
+			tmdbClient.EnrichWithProviders(resp.Results)
+			return nil
+		})
 
 		// Limit to requested number
 		results := resp.Results
@@ -137,57 +196,54 @@ func runNonInteractive(aiProvider ai.Provider, tmdbClient *tmdb.Client, query st
 				VoteCount: media.VoteCount,
 			})
 		}
-		summary = fmt.Sprintf("Keywords: %s", strings.Join(params.Keywords, ", "))
+		summary = fmt.Sprintf("Found %d matches", len(recommendations))
 	}
 
+	fmt.Println()
+
 	if len(recommendations) == 0 {
-		fmt.Println("No results found.")
+		if plain {
+			fmt.Println("No results found.")
+		} else {
+			cli.PrintNoResults()
+		}
 		return nil
 	}
 
-	fmt.Printf("📋 %s\n\n", summary)
-
-	for i, rec := range recommendations {
-		mediaType := "🎬"
-		if rec.MediaType == "tv" {
-			mediaType = "📺"
-		}
-
-		stars := renderStarsText(rec.Rating)
-
-		fmt.Printf("%d. %s %s (%s)\n", i+1, mediaType, rec.Title, rec.Year)
-		fmt.Printf("   %s %.1f/10\n", stars, rec.Rating)
-
-		if len(rec.Providers) > 0 {
-			fmt.Printf("   📍 %s\n", strings.Join(rec.Providers, ", "))
-		}
-
-		if rec.WhyWatch != "" {
-			fmt.Printf("   💡 %s\n", rec.WhyWatch)
-		}
-
-		if rec.Overview != "" {
-			overview := rec.Overview
-			if len(overview) > 150 {
-				overview = overview[:147] + "..."
+	// Print results
+	if plain {
+		fmt.Printf("%s\n\n", summary)
+		for i, rec := range recommendations {
+			mediaType := "MOVIE"
+			if rec.MediaType == "tv" {
+				mediaType = "TV"
 			}
-			fmt.Printf("   %s\n", overview)
+			fmt.Printf("%d. [%s] %s (%s) - %.1f/10\n", i+1, mediaType, rec.Title, rec.Year, rec.Rating)
+			if len(rec.Providers) > 0 {
+				fmt.Printf("   Watch on: %s\n", joinStrings(rec.Providers, ", "))
+			}
+			if rec.WhyWatch != "" {
+				fmt.Printf("   Why: %s\n", rec.WhyWatch)
+			}
+			fmt.Println()
 		}
+	} else {
+		cli.PrintSummary(summary)
+		cli.PrintDivider()
 		fmt.Println()
+		cli.PrintResults(recommendations, true)
 	}
 
 	return nil
 }
 
-func renderStarsText(rating float64) string {
-	stars := int(rating / 2)
-	result := ""
-	for i := 0; i < 5; i++ {
-		if i < stars {
-			result += "★"
-		} else {
-			result += "☆"
-		}
+func joinStrings(strs []string, sep string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	result := strs[0]
+	for i := 1; i < len(strs); i++ {
+		result += sep + strs[i]
 	}
 	return result
 }
