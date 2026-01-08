@@ -33,24 +33,26 @@ type FocusArea int
 const (
 	FocusInput FocusArea = iota
 	FocusViewport
+	FocusCards
 )
 
 // ChatModel is the Bubble Tea model for chat mode
 type ChatModel struct {
-	state           ChatState
-	focus           FocusArea          // Current focus area
-	textarea        textarea.Model
-	viewport        viewport.Model
-	spinner         spinner.Model
-	chatProvider    ai.ChatProvider
-	executor        *ai.ToolExecutor
-	session         *session.Session
-	displayMsgs     []string           // Formatted messages for display
-	pendingToolCalls []tools.ToolCall  // Tool calls being executed
-	width           int
-	height          int
-	ready           bool               // viewport ready
-	err             error
+	state            ChatState
+	focus            FocusArea           // Current focus area
+	textarea         textarea.Model
+	viewport         viewport.Model
+	spinner          spinner.Model
+	chatProvider     ai.ChatProvider
+	executor         *ai.ToolExecutor
+	session          *session.Session
+	displayItems     []DisplayItem       // Display items (text or cards)
+	pendingToolCalls []tools.ToolCall    // Tool calls being executed
+	cardSelection    *CardSelection      // Current card selection (nil if none)
+	width            int
+	height           int
+	ready            bool                // viewport ready
+	err              error
 }
 
 // Chat messages
@@ -96,7 +98,7 @@ func NewChatModel(chatProvider ai.ChatProvider, tmdbClient *tmdb.Client, traktCl
 		chatProvider: chatProvider,
 		executor:     executor,
 		session:      sess,
-		displayMsgs:  []string{},
+		displayItems: []DisplayItem{},
 	}
 }
 
@@ -130,7 +132,7 @@ func (m ChatModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if !m.ready {
 			m.viewport = viewport.New(msg.Width-6, viewportHeight)
-			m.viewport.SetContent(strings.Join(m.displayMsgs, "\n\n"))
+			m.viewport.SetContent(m.renderDisplayItems())
 			m.ready = true
 		} else {
 			m.viewport.Width = msg.Width - 6
@@ -183,20 +185,41 @@ func (m ChatModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "tab":
-		// Toggle focus between input and viewport
+		// Cycle focus: Input -> Viewport -> Cards (if any) -> Input
 		if m.state == ChatStateReady {
-			if m.focus == FocusInput {
+			switch m.focus {
+			case FocusInput:
 				m.focus = FocusViewport
 				m.textarea.Blur()
-			} else {
+			case FocusViewport:
+				// If there are cards, go to card selection
+				if m.hasCards() {
+					m.focus = FocusCards
+					m.initCardSelection()
+					m.updateViewportContent()
+				} else {
+					m.focus = FocusInput
+					m.textarea.Focus()
+					return m, textarea.Blink
+				}
+			case FocusCards:
 				m.focus = FocusInput
+				m.cardSelection = nil
 				m.textarea.Focus()
+				m.updateViewportContent()
 				return m, textarea.Blink
 			}
 		}
 		return m, nil
 
 	case "esc":
+		// If in card selection, go back to viewport
+		if m.focus == FocusCards {
+			m.focus = FocusViewport
+			m.cardSelection = nil
+			m.updateViewportContent()
+			return m, nil
+		}
 		// If viewing history, go back to input
 		if m.focus == FocusViewport {
 			m.focus = FocusInput
@@ -212,6 +235,10 @@ func (m ChatModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "enter":
+		// If in card selection, expand the selected card
+		if m.focus == FocusCards && m.cardSelection != nil {
+			return m.expandSelectedCard()
+		}
 		// If viewing history, pressing enter goes back to input
 		if m.focus == FocusViewport {
 			m.focus = FocusInput
@@ -231,6 +258,35 @@ func (m ChatModel) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.sendMessage()
 		}
 		return m, nil
+	}
+
+	// Handle card selection navigation
+	if m.focus == FocusCards && m.cardSelection != nil {
+		switch msg.String() {
+		case "up", "k":
+			m.moveCardSelection(-1)
+			m.updateViewportContent()
+			return m, nil
+		case "down", "j":
+			m.moveCardSelection(1)
+			m.updateViewportContent()
+			return m, nil
+		case "home", "g":
+			m.cardSelection.CardIndex = 0
+			m.updateViewportContent()
+			return m, nil
+		case "end", "G":
+			m.cardSelection.CardIndex = m.cardSelection.TotalCards - 1
+			m.updateViewportContent()
+			return m, nil
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			idx := int(msg.String()[0] - '1')
+			if idx < m.cardSelection.TotalCards {
+				m.cardSelection.CardIndex = idx
+				m.updateViewportContent()
+			}
+			return m, nil
+		}
 	}
 
 	// Handle viewport scrolling when focused on viewport
@@ -385,6 +441,18 @@ func (m ChatModel) handleToolResults(results []tools.ToolResult) (tea.Model, tea
 				break
 			}
 		}
+
+		// Check if this is a media tool and try to parse cards
+		if IsMediaTool(toolName) && !result.IsError {
+			cards, err := ParseMediaCards(result.Content)
+			if err == nil && len(cards) > 0 {
+				// Add as card display item
+				m.addMediaCards(cards, toolName)
+				continue
+			}
+		}
+
+		// Fallback to text display for non-media or failed parsing
 		m.addDisplayMessage(FormatToolResult(toolName, !result.IsError))
 	}
 
@@ -397,15 +465,111 @@ func (m ChatModel) handleToolResults(results []tools.ToolResult) (tea.Model, tea
 }
 
 func (m *ChatModel) addDisplayMessage(msg string) {
-	m.displayMsgs = append(m.displayMsgs, msg)
-	if m.ready {
-		m.viewport.SetContent(strings.Join(m.displayMsgs, "\n\n"))
-		m.viewport.GotoBottom()
-	}
+	m.displayItems = append(m.displayItems, NewTextDisplayItem(msg))
+	m.updateViewportContent()
+}
+
+func (m *ChatModel) addMediaCards(cards []MediaCard, toolName string) {
+	m.displayItems = append(m.displayItems, NewCardsDisplayItem(cards, toolName))
+	m.updateViewportContent()
 }
 
 func (m *ChatModel) addSystemMessage(msg string) {
 	m.addDisplayMessage(FormatSystemMessage(msg))
+}
+
+func (m *ChatModel) updateViewportContent() {
+	if m.ready {
+		m.viewport.SetContent(m.renderDisplayItems())
+		m.viewport.GotoBottom()
+	}
+}
+
+func (m *ChatModel) renderDisplayItems() string {
+	var parts []string
+	for i, item := range m.displayItems {
+		switch item.Type {
+		case DisplayItemText:
+			parts = append(parts, item.Text)
+		case DisplayItemCards:
+			parts = append(parts, RenderMediaCardGroup(item.MediaCards, m.cardSelection, i, m.width))
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func (m *ChatModel) hasCards() bool {
+	for _, item := range m.displayItems {
+		if item.Type == DisplayItemCards && len(item.MediaCards) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *ChatModel) initCardSelection() {
+	// Find the last card group and select the first card
+	for i := len(m.displayItems) - 1; i >= 0; i-- {
+		if m.displayItems[i].Type == DisplayItemCards && len(m.displayItems[i].MediaCards) > 0 {
+			m.cardSelection = &CardSelection{
+				ItemIndex:  i,
+				CardIndex:  0,
+				TotalCards: len(m.displayItems[i].MediaCards),
+			}
+			return
+		}
+	}
+}
+
+func (m *ChatModel) moveCardSelection(delta int) {
+	if m.cardSelection == nil {
+		return
+	}
+	newIdx := m.cardSelection.CardIndex + delta
+	if newIdx < 0 {
+		newIdx = 0
+	} else if newIdx >= m.cardSelection.TotalCards {
+		newIdx = m.cardSelection.TotalCards - 1
+	}
+	m.cardSelection.CardIndex = newIdx
+}
+
+func (m ChatModel) expandSelectedCard() (tea.Model, tea.Cmd) {
+	if m.cardSelection == nil {
+		return m, nil
+	}
+
+	// Get the selected card
+	item := m.displayItems[m.cardSelection.ItemIndex]
+	if item.Type != DisplayItemCards || m.cardSelection.CardIndex >= len(item.MediaCards) {
+		return m, nil
+	}
+
+	card := item.MediaCards[m.cardSelection.CardIndex]
+
+	// Show expanded card info as a system message
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("📋 %s (%s)\n", card.Title, card.Year))
+	sb.WriteString(fmt.Sprintf("   Rating: %s %.1f/10\n", renderStars(card.Rating), card.Rating))
+	if len(card.Providers) > 0 {
+		sb.WriteString(fmt.Sprintf("   Watch on: %s\n", strings.Join(card.Providers, ", ")))
+	}
+	if card.Overview != "" {
+		sb.WriteString(fmt.Sprintf("   %s", card.Overview))
+	}
+	if card.WhyWatch != "" {
+		sb.WriteString(fmt.Sprintf("\n   💡 %s", card.WhyWatch))
+	}
+
+	m.addDisplayMessage(FormatSystemMessage(sb.String()))
+
+	// Return to input mode for follow-up
+	m.focus = FocusInput
+	m.cardSelection = nil
+	m.textarea.Focus()
+	m.updateViewportContent()
+
+	return m, textarea.Blink
 }
 
 func (m ChatModel) View() string {
@@ -417,9 +581,12 @@ func (m ChatModel) View() string {
 
 	// Header with focus indicator and scroll position
 	headerText := "wtfsiw - Chat Mode"
-	if m.focus == FocusViewport {
+	switch m.focus {
+	case FocusViewport:
 		scrollPercent := m.viewport.ScrollPercent() * 100
 		headerText += fmt.Sprintf(" [SCROLL %.0f%%]", scrollPercent)
+	case FocusCards:
+		headerText += " [SELECT CARD]"
 	}
 	sb.WriteString(chatHeaderStyle.Render(headerText))
 	sb.WriteString("\n")
@@ -457,8 +624,14 @@ func (m ChatModel) View() string {
 	switch {
 	case m.state != ChatStateReady:
 		help = "Processing..."
+	case m.focus == FocusCards:
+		sel := ""
+		if m.cardSelection != nil {
+			sel = fmt.Sprintf(" [%d/%d]", m.cardSelection.CardIndex+1, m.cardSelection.TotalCards)
+		}
+		help = fmt.Sprintf("↑/k ↓/j select • 1-9 quick select • Enter expand • Esc back%s", sel)
 	case m.focus == FocusViewport:
-		help = "↑/k ↓/j scroll • Ctrl+u/d page • g/G top/bottom • Tab/Esc/Enter → input"
+		help = "↑/k ↓/j scroll • Ctrl+u/d page • g/G top/bottom • Tab cards • Esc → input"
 	default:
 		help = "Enter send • Tab scroll history • Esc quit"
 	}
